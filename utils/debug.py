@@ -1,10 +1,26 @@
+#!/usr/bin/env python3
+# Copyright (C) @subinps
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+from .logger import LOGGER
 from config import Config
 import os
 import time
 from threading import Thread
 import sys
 if Config.DATABASE_URI:
-    from database import db
+    from .database import db
 from pyrogram import (
     Client, 
     filters
@@ -28,8 +44,10 @@ debug = Client(
 )
 
 
-@debug.on_message(filters.command(['env', f"env@{Config.BOT_USERNAME}", "config", f"config@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.SUDO))
+@debug.on_message(filters.command(['env', f"env@{Config.BOT_USERNAME}", "config", f"config@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.ADMINS))
 async def set_heroku_var(client, message):
+    if message.from_user.id not in Config.SUDO:
+        return await message.reply(f"/env command can only be used by creator of the bot, ({str(Config.SUDO)})")
     with suppress(MessageIdInvalid, MessageNotModified):
         m = await message.reply("Checking config vars..")
         if " " in message.text:
@@ -115,7 +133,7 @@ async def set_heroku_var(client, message):
                     await db.edit_config("RESTART", msg)
             config[var] = str(value)
 
-@debug.on_message(filters.command(["restart", f"restart@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.SUDO))
+@debug.on_message(filters.command(["restart", f"restart@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.ADMINS))
 async def update(bot, message):
     m=await message.reply("Restarting with new changes..")
     if Config.DATABASE_URI:
@@ -127,12 +145,11 @@ async def update(bot, message):
     if Config.HEROKU_APP:
         Config.HEROKU_APP.restart()
     else:
-        await message
         Thread(
             target=stop_and_restart()
             ).start()
 
-@debug.on_message(filters.command(["clearplaylist", f"clearplaylist@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.SUDO))
+@debug.on_message(filters.command(["clearplaylist", f"clearplaylist@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.ADMINS))
 async def clear_play_list(client, m: Message):
     if not Config.playlist:
         k = await m.reply("Playlist is empty.")  
@@ -142,7 +159,7 @@ async def clear_play_list(client, m: Message):
     await clear_db_playlist(all=True)
 
     
-@debug.on_message(filters.command(["skip", f"skip@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.SUDO))
+@debug.on_message(filters.command(["skip", f"skip@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.ADMINS))
 async def skip_track(_, m: Message):
     msg=await m.reply('trying to skip from queue..')
     if not Config.playlist:
@@ -167,14 +184,10 @@ async def skip_track(_, m: Message):
         except (ValueError, TypeError):
             await msg.edit("Invalid input")
     pl=await get_playlist_str()
-    if m.chat.type == "private":
-        await msg.edit(pl, disable_web_page_preview=True)
-    elif not Config.LOG_GROUP and m.chat.type == "supergroup":
-        if Config.msg.get('player'):
-            await Config.msg['player'].delete()
-        Config.msg['player'] = await msg.edit(pl, disable_web_page_preview=True)
+    await msg.edit(pl, disable_web_page_preview=True)
 
-@debug.on_message(filters.command(['logs', f"logs@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.SUDO))
+
+@debug.on_message(filters.command(['logs', f"logs@{Config.BOT_USERNAME}"]) & filters.private & filters.user(Config.ADMINS))
 async def get_logs(client, message):
     m=await message.reply("Checking logs..")
     if os.path.exists("botlog.txt"):
@@ -185,7 +198,7 @@ async def get_logs(client, message):
 
 @debug.on_message(filters.text & filters.private)
 async def reply_else(bot, message):
-    await message.reply("**Development mode is activated.\nThis occures when there are some errors in startup of the bot.\nOnly Configuration commands works in development mode.\nAvailabe commands are /env, /skip, /clearplaylist and /restart and /logs**")
+    await message.reply(f"Development mode is activated.\nThis occures when there are some errors in startup of the bot.\nOnly Configuration commands works in development mode.\nAvailabe commands are /env, /skip, /clearplaylist and /restart and /logs\n\n**The cause for activation of development mode was**\n\n`{str(Config.STARTUP_ERROR)}`")
 
 def stop_and_restart():
     os.system("git pull")

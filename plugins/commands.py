@@ -12,7 +12,7 @@
 
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from logger import LOGGER
+from utils import LOGGER
 from contextlib import suppress
 from config import Config
 import calendar
@@ -41,15 +41,17 @@ from utils import (
     is_admin, 
     chat_filter,
     sudo_filter,
-    delete_messages
+    delete_messages,
+    seek_file
 )
 from pyrogram import (
     Client, 
     filters
 )
+
 IST = pytz.timezone(Config.TIME_ZONE)
 if Config.DATABASE_URI:
-    from database import db
+    from utils import db
 
 HOME_TEXT = "<b>Hey  [{}](tg://user?id={}) 🙋‍♂️\n\nIam A Bot Built To Play or Stream Videos In Telegram VoiceChats.\nI Can Stream Any YouTube Video Or A Telegram File Or Even A YouTube Live.</b>"
 admin_filter=filters.create(is_admin) 
@@ -216,7 +218,10 @@ async def update_handler(client, message):
                 db.add_config("RESTART", msg)
             else:
                 await db.edit_config("RESTART", msg)
-    await message.delete()
+    try:
+        await message.delete()
+    except:
+        pass
     await update()
 
 @Client.on_message(filters.command(['logs', f"logs@{Config.BOT_USERNAME}"]) & admin_filter & chat_filter)
@@ -236,17 +241,33 @@ async def set_heroku_var(client, message):
         m = await message.reply("Checking config vars..")
         if " " in message.text:
             cmd, env = message.text.split(" ", 1)
-            if  not "=" in env:
-                await m.edit("You should specify the value for env.\nExample: /env CHAT=-100213658211")
-                await delete_messages([message, m])
-                return
-            var, value = env.split("=", 1)
+            if "=" in env:
+                var, value = env.split("=", 1)
+            else:
+                if env == "STARTUP_STREAM":
+                    env_ = "STREAM_URL"
+                elif env == "QUALITY":
+                    env_ = "CUSTOM_QUALITY" 
+                else:
+                    env_ = env
+                ENV_VARS = ["ADMINS", "SUDO", "CHAT", "LOG_GROUP", "STREAM_URL", "SHUFFLE", "ADMIN_ONLY", "REPLY_MESSAGE", 
+                        "EDIT_TITLE", "RECORDING_DUMP", "RECORDING_TITLE", "IS_VIDEO", "IS_LOOP", "DELAY", "PORTRAIT", 
+                        "IS_VIDEO_RECORD", "PTN", "CUSTOM_QUALITY"]
+                if env_ in ENV_VARS:
+                    await m.edit(f"Current Value for `{env}`  is `{getattr(Config, env_)}`")
+                    await delete_messages([message])
+                    return
+                else:
+                    await m.edit("This is an invalid env value. Read help on env to know about available env vars.")
+                    await delete_messages([message, m])
+                    return     
+            
         else:
             await m.edit("You haven't provided any value for env, you should follow the correct format.\nExample: <code>/env CHAT=-1020202020202</code> to change or set CHAT var.\n<code>/env REPLY_MESSAGE= <code>To delete REPLY_MESSAGE.")
             await delete_messages([message, m])
             return
 
-        if Config.DATABASE_URI and var in ["STARTUP_STREAM", "CHAT", "LOG_GROUP", "REPLY_MESSAGE", "DELAY", "RECORDING_DUMP"]:      
+        if Config.DATABASE_URI and var in ["STARTUP_STREAM", "CHAT", "LOG_GROUP", "REPLY_MESSAGE", "DELAY", "RECORDING_DUMP", "QUALITY"]:      
             await m.edit("Mongo DB Found, Setting up config vars...")
             await asyncio.sleep(2)  
             if not value:
@@ -261,13 +282,27 @@ async def set_heroku_var(client, message):
                 await delete_messages([message, m])           
                 return
             else:
-                if var in ["CHAT", "LOG_GROUP", "RECORDING_DUMP"]:
+                if var in ["CHAT", "LOG_GROUP", "RECORDING_DUMP", "QUALITY"]:
                     try:
                         value=int(value)
                     except:
-                        await m.edit("You should give me a chat id . It should be an interger.")
-                        await delete_messages([message, m])
-                        return
+                        if var == "QUALITY":
+                            if not value.lower() in ["low", "medium", "high"]:
+                                await m.edit("You should specify a value between 10 - 100.")
+                                await delete_messages([message, m])
+                                return
+                            else:
+                                value = value.lower()
+                                if value == "high":
+                                    value = 100
+                                elif value == "medium":
+                                    value = 66.9
+                                elif value == "low":
+                                    value = 50
+                        else:
+                            await m.edit("You should give me a chat id . It should be an interger.")
+                            await delete_messages([message, m])
+                            return
                     if var == "CHAT":
                         await leave_call()
                         Config.ADMIN_CACHE=False
@@ -277,6 +312,16 @@ async def set_heroku_var(client, message):
                         Config.CHAT=int(value)
                         await restart()
                     await edit_config(var, int(value))
+                    if var == "QUALITY":
+                        if Config.CALL_STATUS:
+                            data=Config.DATA.get('FILE_DATA')
+                            if not data \
+                                or data.get('dur', 0) == 0:
+                                await restart_playout()
+                                return
+                            k, reply = await seek_file(0)
+                            if k == False:
+                                await restart_playout()
                     await m.edit(f"Succesfully changed {var} to {value}")
                     await delete_messages([message, m])
                     return

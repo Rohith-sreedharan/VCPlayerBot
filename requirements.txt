@@ -1,11 +1,11 @@
 git+https://github.com/pyrogram/pyrogram@master
-py-tgcalls==0.8.1b25
+py-tgcalls
+parse-torrent-name
 tgcrypto
-ffmpeg-python
-wrapt_timeout_decorator
-youtube_dl
-youtube_search_python
-youtube_search
+yt-dlp
+youtube-search-python
+httpx==0.14.2
+youtube-search
 heroku3
 pillow
 motor

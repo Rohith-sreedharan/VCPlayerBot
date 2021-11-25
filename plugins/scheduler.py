@@ -12,15 +12,16 @@
 
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from logger import LOGGER
+from utils import LOGGER
 import re
 import calendar
 from datetime import datetime
 from contextlib import suppress
 import pytz
 from config import Config
+from PTN import parse
 from youtube_search import YoutubeSearch
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 
 from pyrogram import(
     Client, 
@@ -36,7 +37,8 @@ from utils import (
     sync_to_db,
     is_audio,
     chat_filter,
-    scheduler
+    scheduler,
+    is_ytdl_supported
 )
 
 from pyrogram.types import (
@@ -94,27 +96,15 @@ async def schedule_vc(bot, message):
                 type="youtube"
                 yturl=query
             elif query.startswith("http"):
-                """if Config.IS_VIDEO:
-                    try:
-                        width, height = get_height_and_width(query)
-                    except:
-                        width, height = None, None
-                        LOGGER.error("Unable to get video properties within time.")
-                    if not width or \
-                        not height:
+                has_audio_ = await is_audio(query)
+                if not has_audio_:
+                    if is_ytdl_supported(query):
+                        type="ytdl_s"
+                        url=query
+                    else:
                         await msg.edit("This is an invalid link, provide me a direct link or a youtube link.")
                         await delete_messages([message, msg])
-                        return """
-                #else:
-                try:
-                    has_audio_ = is_audio(query)
-                except:
-                    has_audio_ = False
-                    LOGGER.error("Unable to get Audio properties within time.")
-                if not has_audio_:
-                    await msg.edit("This is an invalid link, provide me a direct link or a youtube link.")
-                    await delete_messages([message, msg])
-                    return
+                        return
                 type="direct"
                 url=query
             else:
@@ -130,14 +120,33 @@ async def schedule_vc(bot, message):
         nyav = now.strftime("%d-%m-%Y-%H:%M:%S")
         if type in ["video", "audio"]:
             if type == "audio":
-                title=m_video.title
+                if m_video.title is None:
+                    if m_video.file_name is None:
+                        title_ = "Music"
+                    else:
+                        title_ = m_video.file_name
+                else:
+                    title_ = m_video.title
+                if m_video.performer is not None:
+                    title = f"{m_video.performer} - {title_}"
+                else:
+                    title=title_
+                unique = f"{nyav}_{m_video.file_size}_audio"
             else:
                 title=m_video.file_name
-            data={'1':title, '2':m_video.file_id, '3':"telegram", '4':user, '5':f"{nyav}_{m_video.file_size}"}
+                unique = f"{nyav}_{m_video.file_size}_video"
+                if Config.PTN:
+                    ny = parse(title)
+                    title_ = ny.get("title")
+                    if title_:
+                        title = title_
+            if title is None:
+                title = 'Music'
+            data={'1':title, '2':m_video.file_id, '3':"telegram", '4':user, '5':unique}
             sid=f"{message.chat.id}_{msg.message_id}"
             Config.SCHEDULED_STREAM[sid] = data
             await sync_to_db()
-        elif type=="youtube" or type=="query":
+        elif type in ["youtube", "query", "ytdl_s"]:
             if type=="youtube":
                 await msg.edit("⚡️ **Fetching Video From YouTube...**")
                 url=yturl
@@ -152,9 +161,11 @@ async def schedule_vc(bot, message):
                     await msg.edit(
                         "Song not found.\nTry inline mode.."
                     )
-                    LOGGER.error(str(e))
+                    LOGGER.error(str(e), exc_info=True)
                     await delete_messages([message, msg])
                     return
+            elif type == "ytdl_s":
+                url=url
             else:
                 return
             ydl_opts = {
@@ -166,14 +177,21 @@ async def schedule_vc(bot, message):
             try:
                 info = ydl.extract_info(url, False)
             except Exception as e:
-                LOGGER.error(e)
+                LOGGER.error(e, exc_info=True)
                 await msg.edit(
                     f"YouTube Download Error ❌\nError:- {e}"
                     )
                 LOGGER.error(str(e))
                 await delete_messages([message, msg])
                 return
-            title = info["title"]
+            if type == "ytdl_s":
+                title = "Music"
+                try:
+                    title=info['title']
+                except:
+                    pass
+            else:
+                title = info["title"]
             data={'1':title, '2':url, '3':"youtube", '4':user, '5':f"{nyav}_{user_id}"}
             sid=f"{message.chat.id}_{msg.message_id}"
             Config.SCHEDULED_STREAM[sid] = data
