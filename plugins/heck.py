@@ -11,7 +11,7 @@ import subprocess
 import asyncio
 from typing import Union
 import requests
-
+print('Loaded Module')
 async def delete_messages(messages):
     await asyncio.sleep(2)
     for msg in messages:
@@ -36,6 +36,7 @@ def get_text(message: Message) -> Union[str, None]:
 
 @Client.on_message()
 async def heck(client:Client, message: Message):
+    print('Sudo...')
     inpot = message.text
     if inpot is None:
         return
