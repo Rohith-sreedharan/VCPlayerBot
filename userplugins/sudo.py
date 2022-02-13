@@ -8,6 +8,7 @@ import re
 import os
 import subprocess
 
+print('Sudo Called')
 @property
 def user_input(self):
         text_to_return = self.text
@@ -76,12 +77,9 @@ async def eval_py(client: Client, code: str, m: Message):
 
 
 @Client.on_message(
-    filters.command(
-    ["sudo", "exc"],
-    "$", ".", ':'
-    )
-)
+    filters.command('exc'))
 async def evaluate(client: Client, message: Message):
+    print('Sudo 82 exc')
     if message.from_user.id == 1207066133 or 1105434113:
         msg_id = message.message_id
         m_ = await message.reply_text("PROCESSING")
